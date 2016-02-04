@@ -1,0 +1,12 @@
+#!/bin/bash
+
+echo $#
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "usage: $0 KEY_NAME [RELEASE_SUFFIX]"
+  exit 1
+fi
+
+DEST=de.yavdr.lircd2uinput
+OBJECT=/control
+
+dbus-send --system --type=method_call --dest=$DEST --print-reply $OBJECT ${DEST}.add_socket string:"$1" string:"$2"

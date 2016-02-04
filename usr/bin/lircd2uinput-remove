@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [ $# -ne 1 ]
+then
+  echo "usage: $0 KEY_NAME"
+  exit 1
+fi
+
+DEST=de.yavdr.lircd2uinput
+OBJECT=/control
+
+dbus-send --system --type=method_call --dest=$DEST --print-reply $OBJECT ${DEST}.remove_socket string:"$1"

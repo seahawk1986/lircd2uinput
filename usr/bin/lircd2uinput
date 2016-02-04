@@ -1,0 +1,263 @@
+#!/usr/bin/python3
+# vim: set fileencoding=utf-8
+# Alexander Grothe 2011 - 2016
+#
+# This script requires python-uinput V 0.6.1. or higher. Additional required
+# packages are libudev0 and libudev-dev.
+#
+# Fetch the code for python-uinput from git: ###
+#
+# git clone git://github.com/tuomasjjrasanen/python-uinput.git cd python-uinput
+# git clone git://github.com/tuomasjjrasanen/libsuinput.git sudo python setup.py
+# install
+#
+# This script must be run as superuser or with sufficent rights to create an
+# uinput device and exspects a lircd socket using pid from
+# /var/run/lirc/lircd.pid under /var/run/lirc/lircd.<pid of lircd> if none is
+# given by --lircd-socket /PATH/TO/LIRCD_SOCKET lircd must not be startet with
+# --uinput, but may be started with --release="_up" to prevent ghosting events
+# if necessary.
+
+import dbus.service
+from dbus.mainloop.glib import DBusGMainLoop
+import logging
+import socket
+from gi.repository import GObject
+import os
+import sys
+import uinput
+import datetime
+from optparse import OptionParser
+
+
+class Lirc2uinput(uinput.Device):
+    """Sends keystrokes to a virtual uinput device after applying
+    a repeat-filter"""
+    def __init__(self, uinput_name="lircd", options=None):
+        self.lastkey = None
+        self.lircd_socket = options.lircd_socket
+        self.timestamp = datetime.datetime.now()
+        self.events = []
+        # add all defined KEY_.* to supported key events
+        self.events = (key_value for key, key_value in uinput.__dict__.items()
+                       if key.startswith('KEY_'))
+        self.specialkeys = [uinput.KEY_VOLUMEUP, uinput.KEY_VOLUMEDOWN]
+        # create uinput device
+        super().__init__(self.events, uinput_name)
+
+    def getKeyname(self, key):
+        try:
+            keycmd = getattr(uinput, key.upper())
+        except AttributeError:
+            keycmd = uinput.KEY_COFFEE
+            logging.debug(("Keyname %s is not supported by your input.h, "
+                           "get a coffee ;)"), key)
+        return keycmd
+
+    def send_key(self, key, count):
+        keycmd = self.getKeyname(key)
+        # logging.debug("send_key: %s, lastkey: %s", keycmd, self.lastkey)
+        if self.lastkey == keycmd and count > 0:
+            # logging.debug("repeated key")
+            self.emit(keycmd, 2, syn=True)
+        else:
+            self.emit(keycmd, 1, syn=True)
+        self.lastkey = keycmd
+        return keycmd
+
+    def release_key(self, keycmd):
+        keycmd = self.getKeyname(keycmd)
+        self.uinputdev.emit(keycmd, 0, True)
+        self.uinputdev.lastkey = None
+        # logging.debug('released key %s', keycmd)
+        self.timer = None
+        return False
+
+
+class SocketConnection:
+    buf = ""
+
+    def __init__(self, socket_path, socket, uinputdev, r_suffix=""):
+        """this function needs the path to a socket, a connected socket instance,
+        and an instance of Lircd2uinput"""
+        self.socket_path = socket_path
+        self.socket = socket
+        self.uinputdev = uinputdev
+        self.r_suffix = r_suffix
+        self.io = GObject.io_add_watch(self.socket, GObject.IO_IN,
+                                       self.handler)
+
+    def still_alive(self):
+        if not os.path.exists(self.socket_path):
+            logging.debug("%s does not exist anymore, removing",
+                          self.socket_path)
+            self.cleanup()
+            return False
+        else:
+            return True
+
+    def cleanup(self):
+        GObject.source_remove(self.io)
+        self.socket.close()
+
+    def handler(self, sock, *args):
+        lines = []
+        self.buf += self.sock.recv(128).decode()
+        if self.buf:
+            lines = filter(None, self.buf.splitlines(True))
+        else:
+            return True  # exit if we got nothing
+        for n, line in enumerate(lines):
+            try:
+                if not line.endswith('\n'):
+                    raise ValueError
+                code, count, cmd, device = line.split(" ")
+            except ValueError:
+                logging.error("not enogh values to unpack")
+                if n == (len(lines) - 1):
+                    self.buf = line
+                else:
+                    self.buf = ""
+                    continue
+            count = int(count, 16)
+            try:
+                if self.timer:
+                    GObject.source_remove(self.timer)
+                    if cmd != self.lastcmd or count == 0 or (cmd.endswith(
+                                                             self.r_suffix)):
+                        self.release_key(self.lastcmd)
+            except Exception as e:
+                logging.exception(e)
+                raise e
+            self.lastcmd = cmd
+            # logging.debug("got key %s repeat %s", cmd, count)
+            self.uinputdev.send_key(cmd, count)
+            # logging.debug("adding timeout for %s", str(cmd))
+            self.timer = GObject.timeout_add(self.timeout,
+                                             self.release_key,
+                                             cmd)
+        self.buf = ""
+        return True
+
+
+class main(dbus.service.Object):
+    """Listens to LIRC's domain socket and calls a method each time an
+    IR command is received."""
+    socket_list = []
+
+    def __init__(self):
+        self.bus = dbus.SystemBus()
+        bus_name = dbus.service.BusName('de.yavdr.lircd2uinput', bus=self.bus)
+        dbus.service.Object.__init__(self, bus_name, '/control')
+        parser = Options()
+        self.options = parser.get_opts()
+        self.timeout = self.options.timeout
+        self.timer = None
+        self.uinputdev = Lirc2uinput(options=self.options)
+        if not self.options.lircd_socket:
+            # use /var/run/lirc/lircd.<pidof lircd> as socket
+            try:
+                with open("/var/run/lirc/lircd.pid", 'r') as pidfile:
+                    pid = int(pidfile.read().strip("\n"))
+                socket_path = "/var/run/lirc/lircd.{}".format(pid)
+            except IOError as e:
+                logging.debug('no pid file for lircd')
+            except Exception as e:
+                logging.error(e)
+                raise e
+            else:
+                logging.debug('lircd_socket = %s', socket_path)
+        else:
+            if socket_path:
+                socket_path = self.options.lircd_socket
+                try:
+                    logging.debug("init: adding socket %s", socket_path)
+                    logging.debug(self.add_socket(socket_path,
+                                                  self.options.r_suffix))
+                except Exception as e:
+                    logging.exception(e)
+                    logging.warn("could not add inital lircd socket")
+        GObject.timeout_add(1000, self.check_sockets)
+
+    def check_sockets(self):
+        for n, conn in enumerate(self.socket_list):
+            if not conn.still_alive():
+                logging.debug(("socket %s does not exist anymore, "
+                               "removing from list") % conn.socket_path)
+                del(self.socketlist[n])
+
+    @dbus.service.method(
+        'de.yavdr.lircd2uinput', in_signature='ss', out_signature='bs')
+    def add_socket(self, socket_path, r_suffix):
+        if list(filter(lambda x: x.socket_path == socket_path,
+                       self.socket_list)):
+            return False, "already watching socket %s" % (socket_path)
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.setblocking(False)
+        try:
+            sock.connect(socket_path)
+        except Exception as e:
+            logging.error(e)
+            return False, e
+        else:
+            conn = SocketConnection(socket_path, sock, r_suffix, self.uinputdev)
+            self.socket_list.append(conn)
+            logging.debug("added connection to %s", socket_path)
+            return True, "connected to %s" % (socket_path)
+
+    @dbus.service.method(
+        'de.yavdr.lircd2uinput', in_signature='s', out_signature='bs')
+    def remove_socket(self, socket_path):
+        for n, conn in enumerate(self.socket_list):
+            if conn.socket_path == socket_path:
+                logging.debug("removing socket %s", socket_path)
+                conn.cleanup()
+                del(self.socket_list[n])
+                return True, ("removed socket %s" % (socket_path))
+            else:
+                return False, ("no entry for %s" % (socket_path))
+
+    @dbus.service.method(
+        'de.yavdr.lircd2uinput', in_signature='s', out_signature='bs')
+    def emit_key(self, keyname):
+        try:
+            key = getattr(uinput, keyname)
+            self.uinputdev.emit_click(key)
+            return True, "pressed {}".format(key)
+        except AttributeError:
+            return False, "keyname {} is not supported".format(keyname)
+        except Exception as e:
+            return False, e
+
+
+class Options:
+    def __init__(self):
+        self.parser = OptionParser()
+        self.parser.add_option(
+            "-s", "--lircd-socket", dest="lircd_socket", default=None,
+            help=u"choose lircd socket to listen on", metavar="LIRCD_SOCKET")
+        self.parser.add_option(
+            "-t", "--timeout", dest="timeout", default=500, type="int",
+            help=("release key after x ms no following key is received "
+                  "(default = 500 ms)"), metavar="TIMEOUT")
+        self.parser.add_option(
+            "-r", "--release-suffix", dest="r_suffix", default=" ",
+            metavar="SUFFIX",
+            help=('suffix for released keys '
+                  '(see lirc-option "-r --release[=suffix]")'))
+
+    def get_opts(self):
+        options, args = self.parser.parse_args()
+        return options
+
+
+if __name__ == "__main__":
+    DBusGMainLoop(set_as_default=True)
+    logging.basicConfig(level=logging.DEBUG)
+    vlirc = main()
+    try:
+        loop = GObject.MainLoop()
+        loop.run()
+    except KeyboardInterrupt:
+        loop.quit()
+        sys.exit()
