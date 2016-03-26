@@ -14,7 +14,8 @@
 # This script must be run as superuser or with sufficent rights to create an
 # uinput device and exspects a lircd socket using pid from
 # /var/run/lirc/lircd.pid under /var/run/lirc/lircd.<pid of lircd> if none is
-# given by --lircd-socket /PATH/TO/LIRCD_SOCKET lircd must not be startet with
+# given by --lircd-socket
+# /PATH/TO/LIRCD_SOCKET lircd must not be startet with
 # --uinput, but may be started with --release="_up" to prevent ghosting events
 # if necessary.
 
@@ -234,17 +235,29 @@ class Options:
     def __init__(self):
         self.parser = OptionParser()
         self.parser.add_option(
-            "-s", "--lircd-socket", dest="lircd_socket", default=None,
-            help=u"choose lircd socket to listen on", metavar="LIRCD_SOCKET")
+            "-s", "--lircd-socket",
+            dest="lircd_socket",
+            default=None,
+            help=u"choose lircd socket to listen on",
+            metavar="LIRCD_SOCKET",
+        )
         self.parser.add_option(
-            "-t", "--timeout", dest="timeout", default=500, type="int",
+            "-t", "--timeout",
+            dest="timeout",
+            default=500,
+            type="int",
             help=("release key after x ms no following key is received "
-                  "(default = 500 ms)"), metavar="TIMEOUT")
+                  "(default = 500 ms)"),
+            metavar="TIMEOUT",
+        )
         self.parser.add_option(
-            "-r", "--release-suffix", dest="r_suffix", default=" ",
+            "-r", "--release-suffix",
+            dest="r_suffix",
+            default=" ",
             metavar="SUFFIX",
             help=('suffix for released keys '
-                  '(see lirc-option "-r --release[=suffix]")'))
+                  '(see lirc-option "-r --release[=suffix]")'),
+        )
 
     def get_opts(self):
         options, args = self.parser.parse_args()
@@ -255,8 +268,8 @@ if __name__ == "__main__":
     DBusGMainLoop(set_as_default=True)
     logging.basicConfig(level=logging.DEBUG)
     vlirc = main()
+    loop = GObject.MainLoop()
     try:
-        loop = GObject.MainLoop()
         loop.run()
     except KeyboardInterrupt:
         loop.quit()
