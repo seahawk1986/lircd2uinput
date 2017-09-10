@@ -69,7 +69,7 @@ class Lirc2uinput(uinput.Device):
 
     def release_key(self, keycmd):
         keycmd = self.getKeyname(keycmd)
-        self.emit(keycmd, 0, True)
+        self.emit(keycmd, 0, syn=True)
         self.lastkey = None
         # logging.debug('released key %s', keycmd)
         self.timer = None
@@ -104,13 +104,6 @@ class SocketConnection:
         self.socket.close()
 
     def handler(self, sock, *args):
-        try:
-            if self.timer is not None:
-                GObject.source_remove(self.timer)
-                self.timer = None
-        except Exception as e:
-            logging.exception(e)
-            raise e
         #logging.debug("called handler")
         lines = []
         self.buf += sock.recv(1024).decode()
@@ -136,10 +129,9 @@ class SocketConnection:
             try:
                 if self.timer is not None:
                     GObject.source_remove(self.timer)
-                    if cmd != self.lastcmd or count == 0 or (cmd.endswith(
+                    if cmd != self.lastcmd or (self.r_suffix and cmd.endswith(
                                                              self.r_suffix)):
-                        self.release_key(self.lastcmd)
-                    self.timer = None
+                        self.release_key(cmd)
             except Exception as e:
                 logging.exception(e)
                 raise e
@@ -148,11 +140,17 @@ class SocketConnection:
             self.uinputdev.send_key(cmd, count)
             # logging.debug("adding timeout for %s", str(cmd))
             self.timer = GObject.timeout_add(self.options.timeout,
-                                             self.uinputdev.release_key,
+                                             self.release_key,
                                              cmd)
         self.buf = ""
         return True
 
+    def release_key(self, cmd):
+        logging.debug("release key %s", cmd)
+        self.timer = None
+        self.lastcmd = None
+        self.uinputdev.release_key(cmd)
+        return False
 
 class main(dbus.service.Object):
     """Listens to LIRC's domain socket and calls a method each time an
