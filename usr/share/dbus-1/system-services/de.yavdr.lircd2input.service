@@ -1,0 +1,5 @@
+[D-BUS Service]
+User=root
+Name=de.yavdr.lircd2uinput
+Exec=/usr/bin/false #/usr/bin/lircd2uinput
+SystemdService=lircd2uinput.service

@@ -1,0 +1,13 @@
+[Unit]
+Description=lircd2uinput daemon
+Before=lirc.service
+
+[Service]
+Type=dbus
+BusName=de.yavdr.lircd2uinput
+ExecStart=/usr/bin/lircd2uinput
+Type=simple
+
+[Install]
+WantedBy=multi-user.target
+Alias=dbus-de.yavdr.lircd2uinput.service

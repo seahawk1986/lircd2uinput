@@ -2,7 +2,7 @@
 
 if [ $# -ne 1 ]
 then
-  echo "usage: $0 KEY_NAME"
+  echo "usage: $0 SOCKET_PATH"
   exit 1
 fi
 
