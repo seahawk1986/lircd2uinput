@@ -198,7 +198,7 @@ class main(dbus.service.Object):
             sock.connect(socket_path)
         except Exception as e:
             logging.error(e)
-            return False, e
+            return False, "Could not connect to {}".format(socket_path)
         else:
             conn = SocketConnection(socket_path, sock, self.uinputdev, self.options, r_suffix)
             self.socket_list.append(conn)
