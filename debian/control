@@ -1,0 +1,11 @@
+Source: lircd2uinput
+Maintainer: unknown <unknown@unknown>
+Section: python
+Priority: optional
+Build-Depends: debhelper (>= 9)
+Standards-Version: 3.9.1
+
+Package: lircd2uinput
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}, python3, python3-gi, python3-uinput, python3-dbus
+Description: python dbus bindigs for vdr-plugin-dbus2vdr

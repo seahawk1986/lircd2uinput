@@ -1,0 +1,5 @@
+lircd2uinput (0.0.1-0yavdr0~xenial) xenial; urgency=medium
+
+  * initial package build
+
+ -- Alexander Grothe <seahawk1986@gmx.de>  Sun, 10 Sep 2017 05:54:46 +0200
