@@ -39,6 +39,7 @@ class Lirc2uinput(uinput.Device):
         self.lircd_socket = options.lircd_socket
         self.timestamp = datetime.datetime.now()
         self.events = []
+        self.options = options
         # add all defined KEY_.* to supported key events
         self.events = (key_value for key, key_value in uinput.__dict__.items()
                        if key.startswith('KEY_'))
@@ -68,8 +69,8 @@ class Lirc2uinput(uinput.Device):
 
     def release_key(self, keycmd):
         keycmd = self.getKeyname(keycmd)
-        self.uinputdev.emit(keycmd, 0, True)
-        self.uinputdev.lastkey = None
+        self.emit(keycmd, 0, True)
+        self.lastkey = None
         # logging.debug('released key %s', keycmd)
         self.timer = None
         return False
@@ -77,16 +78,17 @@ class Lirc2uinput(uinput.Device):
 
 class SocketConnection:
     buf = ""
+    timer = None
 
-    def __init__(self, socket_path, socket, uinputdev, r_suffix=""):
+    def __init__(self, socket_path, socket_connection, uinputdev, options, r_suffix=""):
         """this function needs the path to a socket, a connected socket instance,
         and an instance of Lircd2uinput"""
         self.socket_path = socket_path
-        self.socket = socket
+        self.socket = socket_connection
         self.uinputdev = uinputdev
+        self.options = options
         self.r_suffix = r_suffix
-        self.io = GObject.io_add_watch(self.socket, GObject.IO_IN,
-                                       self.handler)
+        self.io = GObject.io_add_watch(self.socket, GObject.IO_IN, self.handler)
 
     def still_alive(self):
         if not os.path.exists(self.socket_path):
@@ -102,10 +104,20 @@ class SocketConnection:
         self.socket.close()
 
     def handler(self, sock, *args):
+        try:
+            if self.timer is not None:
+                GObject.source_remove(self.timer)
+                self.timer = None
+        except Exception as e:
+            logging.exception(e)
+            raise e
+        #logging.debug("called handler")
         lines = []
-        self.buf += self.sock.recv(128).decode()
+        self.buf += sock.recv(1024).decode()
+        #logging.debug("buffer:", self.buf)
         if self.buf:
             lines = filter(None, self.buf.splitlines(True))
+            #logging.debug("Got data:", lines)
         else:
             return True  # exit if we got nothing
         for n, line in enumerate(lines):
@@ -122,20 +134,21 @@ class SocketConnection:
                     continue
             count = int(count, 16)
             try:
-                if self.timer:
+                if self.timer is not None:
                     GObject.source_remove(self.timer)
                     if cmd != self.lastcmd or count == 0 or (cmd.endswith(
                                                              self.r_suffix)):
                         self.release_key(self.lastcmd)
+                    self.timer = None
             except Exception as e:
                 logging.exception(e)
                 raise e
             self.lastcmd = cmd
-            # logging.debug("got key %s repeat %s", cmd, count)
+            logging.debug("got key %s repeat %s", cmd, count)
             self.uinputdev.send_key(cmd, count)
             # logging.debug("adding timeout for %s", str(cmd))
-            self.timer = GObject.timeout_add(self.timeout,
-                                             self.release_key,
+            self.timer = GObject.timeout_add(self.options.timeout,
+                                             self.uinputdev.release_key,
                                              cmd)
         self.buf = ""
         return True
@@ -155,29 +168,15 @@ class main(dbus.service.Object):
         self.timeout = self.options.timeout
         self.timer = None
         self.uinputdev = Lirc2uinput(options=self.options)
-        if not self.options.lircd_socket:
-            # use /var/run/lirc/lircd.<pidof lircd> as socket
+        socket_path = self.options.lircd_socket
+        if socket_path:
             try:
-                with open("/var/run/lirc/lircd.pid", 'r') as pidfile:
-                    pid = int(pidfile.read().strip("\n"))
-                socket_path = "/var/run/lirc/lircd.{}".format(pid)
-            except IOError as e:
-                logging.debug('no pid file for lircd')
+                logging.debug("init: adding socket %s", socket_path)
+                logging.debug(self.add_socket(socket_path,
+                                              self.options.r_suffix))
             except Exception as e:
-                logging.error(e)
-                raise e
-            else:
-                logging.debug('lircd_socket = %s', socket_path)
-        else:
-            if socket_path:
-                socket_path = self.options.lircd_socket
-                try:
-                    logging.debug("init: adding socket %s", socket_path)
-                    logging.debug(self.add_socket(socket_path,
-                                                  self.options.r_suffix))
-                except Exception as e:
-                    logging.exception(e)
-                    logging.warn("could not add inital lircd socket")
+                logging.exception(e)
+                logging.warn("could not add inital lircd socket")
         GObject.timeout_add(1000, self.check_sockets)
 
     def check_sockets(self):
@@ -194,14 +193,14 @@ class main(dbus.service.Object):
                        self.socket_list)):
             return False, "already watching socket %s" % (socket_path)
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.setblocking(False)
+        #sock.setblocking(False)
         try:
             sock.connect(socket_path)
         except Exception as e:
             logging.error(e)
             return False, e
         else:
-            conn = SocketConnection(socket_path, sock, r_suffix, self.uinputdev)
+            conn = SocketConnection(socket_path, sock, self.uinputdev, self.options, r_suffix)
             self.socket_list.append(conn)
             logging.debug("added connection to %s", socket_path)
             return True, "connected to %s" % (socket_path)
