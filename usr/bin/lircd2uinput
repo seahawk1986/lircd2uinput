@@ -212,8 +212,7 @@ class main(dbus.service.Object):
                 conn.cleanup()
                 del(self.socket_list[n])
                 return True, ("removed socket %s" % (socket_path))
-            else:
-                return False, ("no entry for %s" % (socket_path))
+        return False, ("no entry for %s" % (socket_path))
 
     @dbus.service.method(
         'de.yavdr.lircd2uinput', in_signature='s', out_signature='bs')
