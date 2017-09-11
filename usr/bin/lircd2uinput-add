@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "usage: $0 SOKET_PATH [RELEASE_SUFFIX]"
+  echo "usage: $0 SOCKET_PATH [RELEASE_SUFFIX]"
   exit 1
 fi
 
