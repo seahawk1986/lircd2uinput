@@ -6,7 +6,6 @@ Before=lirc.service
 Type=dbus
 BusName=de.yavdr.lircd2uinput
 ExecStart=/usr/bin/lircd2uinput
-Type=simple
 
 [Install]
 WantedBy=multi-user.target
