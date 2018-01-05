@@ -62,6 +62,9 @@ class Lirc2uinput(uinput.Device):
         if self.lastkey == keycmd and count > 0:
             # logging.debug("repeated key")
             self.emit(keycmd, 2, syn=True)
+        elif self.lastkey == keycmd and count == 0:
+            self.emit(keycmd, 0, syn=False)
+            self.emit(keycmd, 1, syn=True)
         else:
             self.emit(keycmd, 1, syn=True)
         self.lastkey = keycmd
