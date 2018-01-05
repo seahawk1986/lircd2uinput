@@ -1,3 +1,9 @@
+lircd2uinput (0.0.5-0yavdr0~bionic) bionic; urgency=medium
+
+  * fix key repeat generation if lirc does not generate repeated key presses
+
+ -- Alexander Grothe <seahawk1986@gmx.de>  Fri, 05 Jan 2018 11:14:33 +0000
+
 lircd2uinput (0.0.3-0yavdr0~xenial) xenial; urgency=medium
 
   * fix key repeat generation
