@@ -1,3 +1,9 @@
+lircd2uinput (0.0.6-0yavdr0~bionic) bionic; urgency=medium
+
+  * improve key repeat behaviour, minimize logging output, cleanup code
+
+ -- Alexander Grothe <seahawk1986@gmx.de>  Fri, 11 Jan 2018 15:52:01 +0000
+
 lircd2uinput (0.0.5-0yavdr0~bionic) bionic; urgency=medium
 
   * fix key repeat generation if lirc does not generate repeated key presses
