@@ -1,3 +1,9 @@
+lircd2uinput (0.0.7-0yavdr0~bionic) bionic; urgency=medium
+
+  * fix filename for dbus activation
+
+ -- Alexander Grothe <seahawk1986@gmx.de>  Sat, 20 Jan 2018 20:34:40 +0000
+
 lircd2uinput (0.0.6-0yavdr0~bionic) bionic; urgency=medium
 
   * improve key repeat behaviour, minimize logging output, cleanup code
