@@ -167,11 +167,11 @@ class main(dbus.service.Object):
         GObject.timeout_add(1000, self.check_sockets)
 
     def check_sockets(self):
-        for n, conn in enumerate(self.socket_list):
+        for conn in self.socket_list[:]:
             if not conn.still_alive():
                 logging.debug(("socket %s does not exist anymore, "
                                "removing from list") % conn.socket_path)
-                del(self.socketlist[n])
+                self.socketlist.remove(conn)
 
     @dbus.service.method(
         'de.yavdr.lircd2uinput', in_signature='ss', out_signature='bs')
