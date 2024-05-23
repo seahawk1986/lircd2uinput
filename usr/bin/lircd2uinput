@@ -23,7 +23,7 @@ import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 import logging
 import socket
-from gi.repository import GObject
+from gi.repository import Glib
 import os
 import sys
 import time
@@ -94,7 +94,7 @@ class SocketConnection:
         self.uinputdev = uinputdev
         self.options = options
         self.r_suffix = r_suffix
-        self.io = GObject.io_add_watch(self.socket, GObject.IO_IN, self.handler)
+        self.io = Glib.io_add_watch(self.socket, Glib.IO_IN, self.handler)
 
     def still_alive(self):
         if not os.path.exists(self.socket_path):
@@ -106,7 +106,7 @@ class SocketConnection:
             return True
 
     def cleanup(self):
-        GObject.source_remove(self.io)
+        Glib.source_remove(self.io)
         self.socket.close()
 
     def handler(self, sock, *args):
@@ -164,7 +164,7 @@ class main(dbus.service.Object):
             except Exception as e:
                 logging.exception(e)
                 logging.warn("could not add inital lircd socket")
-        GObject.timeout_add(1000, self.check_sockets)
+        Glib.timeout_add(1000, self.check_sockets)
 
     def check_sockets(self):
         for conn in self.socket_list[:]:
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     DBusGMainLoop(set_as_default=True)
     logging.basicConfig(level=logging.INFO)
     vlirc = main()
-    loop = GObject.MainLoop()
+    loop = Glib.MainLoop()
     try:
         loop.run()
     except KeyboardInterrupt:
