@@ -38,13 +38,17 @@ class Lirc2uinput(uinput.Device):
     events = []
     """Sends keystrokes to a virtual uinput device after applying
     a repeat-filter"""
+
     def __init__(self, uinput_name="lircd", options=None):
         self.lircd_socket = options.lircd_socket
         self.timestamp = datetime.datetime.now()
         self.options = options
         # add all defined KEY_.* definitions to supported key events
-        self.events = (key_value for key, key_value in uinput.__dict__.items()
-                       if key.startswith('KEY_'))
+        self.events = (
+            key_value
+            for key, key_value in uinput.__dict__.items()
+            if key.startswith("KEY_")
+        )
         # create uinput device
         super().__init__(self.events, uinput_name)
 
@@ -53,12 +57,15 @@ class Lirc2uinput(uinput.Device):
             keycmd = getattr(uinput, key.upper())
         except AttributeError:
             keycmd = uinput.KEY_COFFEE
-            logging.debug(("Keyname %s is not supported by your input.h, "
-                           "get a coffee ;)"), key)
+            logging.debug(
+                ("Keyname %s is not supported by your input.h, get a coffee ;)"), key
+            )
         return keycmd
 
     def send_key(self, key, count):
         keycmd = self.getKeyname(key)
+        if options.ignore_invalid and keycmd == uinput.KEY_COFFEE:
+            return keycmd
         # logging.debug("send_key: %s, lastkey: %s", keycmd, self.lastkey)
         if self.lastkey == keycmd and count > 0:
             # logging.debug("repeated key")
@@ -73,11 +80,13 @@ class Lirc2uinput(uinput.Device):
         return keycmd
 
     def release_key(self, keycmd):
-        if self.keydown:
+        if self.keydown and (
+            not self.options.ignore_invalid or keycmd != uinput.KEY_COFFEE
+        ):
             keycmd = self.getKeyname(keycmd)
             self.emit(keycmd, 0, syn=True)
             self.lastkey = None
-            logging.debug('released key %s', keycmd)
+            logging.debug("released key %s", keycmd)
         self.keydown = False
         return False
 
@@ -98,8 +107,7 @@ class SocketConnection:
 
     def still_alive(self):
         if not os.path.exists(self.socket_path):
-            logging.debug("%s does not exist anymore, removing",
-                          self.socket_path)
+            logging.debug("%s does not exist anymore, removing", self.socket_path)
             self.cleanup()
             return False
         else:
@@ -117,7 +125,7 @@ class SocketConnection:
             return True  # exit if we got nothing
         for n, line in enumerate(lines, start=1):
             try:
-                if not line.endswith('\n'):
+                if not line.endswith("\n"):
                     raise ValueError
                 code, count, cmd, device = line.split(" ")
             except ValueError:
@@ -128,8 +136,7 @@ class SocketConnection:
                     self.buf = ""
                     continue
             count = int(count, 16)
-            if (cmd != self.lastcmd
-                    or self.r_suffix and cmd.endswith(self.r_suffix)):
+            if cmd != self.lastcmd or self.r_suffix and cmd.endswith(self.r_suffix):
                 self.release_key(cmd)
             self.lastcmd = cmd
             logging.debug("got key %s repeat %s", cmd, count)
@@ -143,24 +150,25 @@ class SocketConnection:
         self.uinputdev.release_key(cmd)
         return False
 
+
 class main(dbus.service.Object):
     """Listens to LIRC's domain socket and calls a method each time an
     IR command is received."""
+
     socket_list = []
 
     def __init__(self):
         parser = Options()
         self.options = parser.get_opts()
         self.bus = dbus.SystemBus()
-        bus_name = dbus.service.BusName('de.yavdr.lircd2uinput', bus=self.bus)
-        dbus.service.Object.__init__(self, bus_name, '/control')
+        bus_name = dbus.service.BusName("de.yavdr.lircd2uinput", bus=self.bus)
+        dbus.service.Object.__init__(self, bus_name, "/control")
         self.uinputdev = Lirc2uinput(options=self.options)
         socket_path = self.options.lircd_socket
         if socket_path:
             try:
                 logging.debug("init: adding socket %s", socket_path)
-                logging.debug(self.add_socket(socket_path,
-                                              self.options.r_suffix))
+                logging.debug(self.add_socket(socket_path, self.options.r_suffix))
             except Exception as e:
                 logging.exception(e)
                 logging.warn("could not add inital lircd socket")
@@ -169,18 +177,18 @@ class main(dbus.service.Object):
     def check_sockets(self):
         for conn in self.socket_list[:]:
             if not conn.still_alive():
-                logging.debug(("socket %s does not exist anymore, "
-                               "removing from list") % conn.socket_path)
+                logging.debug(
+                    ("socket %s does not exist anymore, removing from list")
+                    % conn.socket_path
+                )
                 self.socketlist.remove(conn)
 
-    @dbus.service.method(
-        'de.yavdr.lircd2uinput', in_signature='ss', out_signature='bs')
+    @dbus.service.method("de.yavdr.lircd2uinput", in_signature="ss", out_signature="bs")
     def add_socket(self, socket_path, r_suffix):
-        if list(filter(lambda x: x.socket_path == socket_path,
-                       self.socket_list)):
+        if list(filter(lambda x: x.socket_path == socket_path, self.socket_list)):
             return False, "already watching socket %s" % (socket_path)
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        #sock.setblocking(False)
+        # sock.setblocking(False)
         retries = 4
         while True:
             try:
@@ -193,24 +201,24 @@ class main(dbus.service.Object):
                 time.sleep(0.25)
             else:
                 break
-        conn = SocketConnection(socket_path, sock, self.uinputdev, self.options, r_suffix)
+        conn = SocketConnection(
+            socket_path, sock, self.uinputdev, self.options, r_suffix
+        )
         self.socket_list.append(conn)
         logging.debug("added connection to %s", socket_path)
         return True, "connected to %s" % (socket_path)
 
-    @dbus.service.method(
-        'de.yavdr.lircd2uinput', in_signature='s', out_signature='bs')
+    @dbus.service.method("de.yavdr.lircd2uinput", in_signature="s", out_signature="bs")
     def remove_socket(self, socket_path):
         for n, conn in enumerate(self.socket_list):
             if conn.socket_path == socket_path:
                 logging.debug("removing socket %s", socket_path)
                 conn.cleanup()
-                del(self.socket_list[n])
+                del self.socket_list[n]
                 return True, ("removed socket %s" % (socket_path))
         return False, ("no entry for %s" % (socket_path))
 
-    @dbus.service.method(
-        'de.yavdr.lircd2uinput', in_signature='s', out_signature='bs')
+    @dbus.service.method("de.yavdr.lircd2uinput", in_signature="s", out_signature="bs")
     def emit_key(self, keyname):
         try:
             key = getattr(uinput, keyname)
@@ -227,24 +235,35 @@ class Options:
         self.parser = OptionParser()
 
         self.parser.add_option(
-            "-s", "--lircd-socket",
+            "-s",
+            "--lircd-socket",
             dest="lircd_socket",
             default=None,
-            help=u"choose lircd socket to listen on",
+            help="choose lircd socket to listen on",
             metavar="LIRCD_SOCKET",
         )
 
         self.parser.add_option(
-            "-r", "--release-suffix",
+            "-r",
+            "--release-suffix",
             dest="r_suffix",
             default=" ",
             metavar="SUFFIX",
-            help=('suffix for released keys '
-                  '(see lirc-option "-r --release[=suffix]")'),
+            help=('suffix for released keys (see lirc-option "-r --release[=suffix]")'),
+        )
+
+        self.parser.add_option(
+            "-d",
+            "--disable-invalid",
+            dest="disable_invalid",
+            default=False,
+            type=bool,
+            action="store_true",
+            help=("don't forward keypresses with invalid names"),
         )
 
     def get_opts(self):
-        options, args = self.parser.parse_args()
+        options, _args = self.parser.parse_args()
         return options
 
 
