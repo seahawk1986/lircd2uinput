@@ -64,7 +64,7 @@ class Lirc2uinput(uinput.Device):
 
     def send_key(self, key, count):
         keycmd = self.getKeyname(key)
-        if options.ignore_invalid and keycmd == uinput.KEY_COFFEE:
+        if options.disable_invalid and keycmd == uinput.KEY_COFFEE:
             return keycmd
         # logging.debug("send_key: %s, lastkey: %s", keycmd, self.lastkey)
         if self.lastkey == keycmd and count > 0:
@@ -81,7 +81,7 @@ class Lirc2uinput(uinput.Device):
 
     def release_key(self, keycmd):
         if self.keydown and (
-            not self.options.ignore_invalid or keycmd != uinput.KEY_COFFEE
+            not self.options.disable_invalid or keycmd != uinput.KEY_COFFEE
         ):
             keycmd = self.getKeyname(keycmd)
             self.emit(keycmd, 0, syn=True)
