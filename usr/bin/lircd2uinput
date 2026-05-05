@@ -257,7 +257,6 @@ class Options:
             "--disable-invalid",
             dest="disable_invalid",
             default=False,
-            type=bool,
             action="store_true",
             help=("don't forward keypresses with invalid names"),
         )
