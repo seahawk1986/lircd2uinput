@@ -1,3 +1,9 @@
+lircd2uinput (0.1.0-0yavdr0~resolute) resolute; urgency=medium
+
+  * add start argument to ignore invalid key names
+
+ -- Alexander Grothe <alexander@yavdr07>  Tue, 07 Mar 2026 21:16:36 +0100
+
 lircd2uinput (0.0.8-0yavdr0~bionic) bionic; urgency=medium
 
   * add retry when adding a new socket to read from to prevent timing problems
