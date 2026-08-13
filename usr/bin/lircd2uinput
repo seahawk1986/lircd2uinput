@@ -19,17 +19,17 @@
 # --uinput, but may be started with --release="_up" to prevent ghosting events
 # if necessary.
 
-import dbus.service
-from dbus.mainloop.glib import DBusGMainLoop
 import logging
-import socket
-from gi.repository import GLib
 import os
+import socket
 import sys
 import time
-import uinput
-import datetime
 from optparse import OptionParser
+
+import dbus.service
+import uinput
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
 
 
 class Lirc2uinput(uinput.Device):
@@ -40,8 +40,9 @@ class Lirc2uinput(uinput.Device):
     a repeat-filter"""
 
     def __init__(self, uinput_name="lircd", options=None):
+        self.logger = logging.getLogger("Lircd2uinput")
         self.lircd_socket = options.lircd_socket
-        self.timestamp = datetime.datetime.now()
+        # self.timestamp = datetime.datetime.now()
         self.options = options
         # add all defined KEY_.* definitions to supported key events
         self.events = (
@@ -57,7 +58,7 @@ class Lirc2uinput(uinput.Device):
             keycmd = getattr(uinput, key.upper())
         except AttributeError:
             keycmd = uinput.KEY_COFFEE
-            logging.debug(
+            self.logger.debug(
                 ("Keyname %s is not supported by your input.h, get a coffee ;)"), key
             )
         return keycmd
@@ -86,18 +87,19 @@ class Lirc2uinput(uinput.Device):
             keycmd = self.getKeyname(keycmd)
             self.emit(keycmd, 0, syn=True)
             self.lastkey = None
-            logging.debug("released key %s", keycmd)
+            self.logger.debug("released key %s", keycmd)
         self.keydown = False
         return False
 
 
 class SocketConnection:
-    buf = ""
+    buf: str = ""
     lastcmd = None
 
     def __init__(self, socket_path, socket_connection, uinputdev, options, r_suffix=""):
         """this function needs the path to a socket, a connected socket instance,
         and an instance of Lircd2uinput"""
+        self.logger = logging.getLogger("SocketConnection")
         self.socket_path = socket_path
         self.socket = socket_connection
         self.uinputdev = uinputdev
@@ -107,7 +109,7 @@ class SocketConnection:
 
     def still_alive(self):
         if not os.path.exists(self.socket_path):
-            logging.debug("%s does not exist anymore, removing", self.socket_path)
+            self.logger.debug("%s does not exist anymore, removing", self.socket_path)
             self.cleanup()
             return False
         else:
@@ -129,8 +131,8 @@ class SocketConnection:
                     raise ValueError
                 code, count, cmd, device = line.split(" ")
             except ValueError:
-                logging.error("not enough values to unpack")
-                if n == len(lines):
+                self.logger.error("not enough values to unpacko in '{}'".format(line))
+                if n == len(list(lines)):
                     self.buf = line
                 else:
                     self.buf = ""
@@ -139,25 +141,26 @@ class SocketConnection:
             if cmd != self.lastcmd or self.r_suffix and cmd.endswith(self.r_suffix):
                 self.release_key(cmd)
             self.lastcmd = cmd
-            logging.debug("got key %s repeat %s", cmd, count)
+            self.logger.debug("got key %s repeat %s", cmd, count)
             self.uinputdev.send_key(cmd, count)
         self.buf = ""
         return True
 
     def release_key(self, cmd):
-        logging.debug("release key %s", cmd)
+        self.logger.debug("release key %s", cmd)
         self.lastcmd = None
         self.uinputdev.release_key(cmd)
         return False
 
 
-class main(dbus.service.Object):
+class Main(dbus.service.Object):
     """Listens to LIRC's domain socket and calls a method each time an
     IR command is received."""
 
     socket_list = []
 
     def __init__(self):
+        self.logger = logging.getLogger("Main")
         parser = Options()
         self.options = parser.get_opts()
         self.bus = dbus.SystemBus()
@@ -167,19 +170,20 @@ class main(dbus.service.Object):
         socket_path = self.options.lircd_socket
         if socket_path:
             try:
-                logging.debug("init: adding socket %s", socket_path)
-                logging.debug(self.add_socket(socket_path, self.options.r_suffix))
+                self.logger.debug("init: adding socket %s", socket_path)
+                self.logger.debug(self.add_socket(socket_path, self.options.r_suffix))
             except Exception as e:
-                logging.exception(e)
-                logging.warn("could not add inital lircd socket")
+                self.logger.exception("could not add socket_path='%s'", socket_path)
+                self.logger.warning("could not add inital lircd socket")
         GLib.timeout_add(1000, self.check_sockets)
 
     def check_sockets(self):
         for conn in self.socket_list[:]:
             if not conn.still_alive():
-                logging.debug(
-                    ("socket %s does not exist anymore, removing from list")
-                    % conn.socket_path
+                self.logger.debug(
+                    "socket {} does not exist anymore, removing from list".format(
+                        conn.socket_path
+                    )
                 )
                 self.socketlist.remove(conn)
 
@@ -195,7 +199,7 @@ class main(dbus.service.Object):
                 sock.connect(socket_path)
             except Exception as e:
                 if retries == 0:
-                    logging.error(e)
+                    self.logger.error(e)
                     return False, "Could not connect to {}: {}".format(socket_path, e)
                 retries -= 1
                 time.sleep(0.25)
@@ -205,14 +209,14 @@ class main(dbus.service.Object):
             socket_path, sock, self.uinputdev, self.options, r_suffix
         )
         self.socket_list.append(conn)
-        logging.debug("added connection to %s", socket_path)
+        self.logger.debug("added connection to %s", socket_path)
         return True, "connected to %s" % (socket_path)
 
     @dbus.service.method("de.yavdr.lircd2uinput", in_signature="s", out_signature="bs")
     def remove_socket(self, socket_path):
         for n, conn in enumerate(self.socket_list):
             if conn.socket_path == socket_path:
-                logging.debug("removing socket %s", socket_path)
+                self.logger.debug("removing socket %s", socket_path)
                 conn.cleanup()
                 del self.socket_list[n]
                 return True, ("removed socket %s" % (socket_path))
@@ -269,7 +273,7 @@ class Options:
 if __name__ == "__main__":
     DBusGMainLoop(set_as_default=True)
     logging.basicConfig(level=logging.INFO)
-    vlirc = main()
+    vlirc = Main()
     loop = GLib.MainLoop()
     try:
         loop.run()
