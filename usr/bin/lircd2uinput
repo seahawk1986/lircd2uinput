@@ -129,7 +129,7 @@ class SocketConnection:
             try:
                 if not line.endswith("\n"):
                     raise ValueError
-                code, count, cmd, device = line.split(" ")
+                _code, count, cmd, _device = line.split(" ", maxsplit=4)
             except ValueError:
                 self.logger.error("not enough values to unpacko in '{}'".format(line))
                 if n == len(list(lines)):
